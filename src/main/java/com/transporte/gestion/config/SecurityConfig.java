@@ -5,59 +5,69 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-
-import com.transporte.gestion.model.Usuario;
-import com.transporte.gestion.repository.UsuarioRepository;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf.disable())
-            .httpBasic(httpBasic -> {})
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(HttpMethod.POST, "/api/camiones").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.GET, "/api/camiones/**").hasAnyRole("ADMIN", "SUPERVISOR")
-                .requestMatchers(HttpMethod.PUT, "/api/camiones/**").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.DELETE, "/api/camiones/**").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.POST, "/api/conductores").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.GET, "/api/conductores/**").hasAnyRole("ADMIN", "SUPERVISOR")
-                .requestMatchers(HttpMethod.PUT, "/api/conductores/**").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.DELETE, "/api/conductores/**").hasRole("ADMIN")
-                .requestMatchers(HttpMethod.PUT, "/api/asociaciones/**").hasRole("SUPERVISOR")
-                .anyRequest().authenticated()
-            );
+private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-        return http.build();
-    }
+public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+}
 
-    @Bean
-    public UserDetailsService userDetailsService(UsuarioRepository usuarioRepository) {
-        return username -> usuarioRepository.findByUsername(username)
-                .map(this::toUserDetails)
-                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado"));
-    }
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())
 
-    private org.springframework.security.core.userdetails.UserDetails toUserDetails(Usuario usuario) {
-        String rol = usuario.getRol().toUpperCase().replace("ROLE_", "");
+        .sessionManagement(session ->
+            session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+        )
 
-        return org.springframework.security.core.userdetails.User.builder()
-                .username(usuario.getUsername())
-                .password(usuario.getPassword())
-                .roles(rol)
-                .build();
-    }
+        .authorizeHttpRequests(auth -> auth
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+            // Login público
+            .requestMatchers("/api/auth/**").permitAll()
+
+            // Camiones
+            .requestMatchers(HttpMethod.POST, "/api/camiones").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.GET, "/api/camiones/**")
+                .hasAnyRole("ADMIN", "SUPERVISOR")
+            .requestMatchers(HttpMethod.PUT, "/api/camiones/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/api/camiones/**").hasRole("ADMIN")
+
+            // Conductores
+            .requestMatchers(HttpMethod.POST, "/api/conductores").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.GET, "/api/conductores/**")
+                .hasAnyRole("ADMIN", "SUPERVISOR")
+            .requestMatchers(HttpMethod.PUT, "/api/conductores/**").hasRole("ADMIN")
+            .requestMatchers(HttpMethod.DELETE, "/api/conductores/**").hasRole("ADMIN")
+
+            // Asociaciones
+            .requestMatchers(HttpMethod.PUT, "/api/asociaciones/**")
+                .hasRole("SUPERVISOR")
+
+            // Todo lo demás requiere autenticación
+            .anyRequest().authenticated()
+        )
+
+        .addFilterBefore(
+            jwtAuthenticationFilter,
+            UsernamePasswordAuthenticationFilter.class
+        );
+
+    return http.build();
+}
+
+@Bean
+public PasswordEncoder passwordEncoder() {
+    return new BCryptPasswordEncoder();
+}
+
 }
